@@ -2,6 +2,7 @@ package org.example.routes
 
 import io.ktor.server.application.*
 import io.ktor.server.html.*
+import io.ktor.server.http.content.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
@@ -13,6 +14,7 @@ import org.example.ui.Templates.adminPage
 import org.example.ui.Templates.indexPage
 
 fun Route.rootRoutes(imageService: ImageService, watcherService: WatcherService) {
+    staticResources("/static", "static")
     get("/") {
         val dirPath = imageService.getCurrentImageDir()
         if (dirPath == null) {

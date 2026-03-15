@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Image Viewer - Demo</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Image Gallery - Demo</h1>
+        <div class="nav-links">
+            <a href="#" id="allLink">All Images</a>
+            <a href="#" id="favsLink">Favorites</a>
+            <a href="#" id="starredLink">Starred</a>
+            <a href="#" id="flaggedLink">Flagged</a>
+            
+            <div style="display: inline-block; margin-left: 20px;">
+                Sort: 
+                <select id="sortSelect">
+                    <option value="name">Name</option>
+                    <option value="new" selected>Newest First</option>
+                    <option value="old">Oldest First</option>
+                </select>
+            </div>
+        </div>
+        <div class="image-list" id="imageList"></div>
+        <div id="sentinel" style="height: 50px;"></div>
+    </div>
+
+    <!-- Modal container for image preview -->
+    <div class="modal" id="imgModal">
+        <button class="close" id="modalClose" title="Close">
+            <svg viewBox="0 0 24 24" width="32" height="32" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+        <button class="nav-btn prev" id="modalPrev" title="Previous Image">
+            <svg viewBox="0 0 24 24" width="36" height="36" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+        </button>
+        <button class="nav-btn next" id="modalNext" title="Next Image">
+            <svg viewBox="0 0 24 24" width="36" height="36" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        </button>
+        <div class="modal-content-wrapper">
+            <img alt="Expanded image" id="modalImg">
+        </div>
+        
+        <div class="modal-info" id="modalInfo"></div>
+        
+        <div class="zoom-controls">
+            <button class="nav-btn random" id="modalRandom" title="Random Image">
+                <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"></path></svg>
+            </button>
+            <button id="modalFavBtn" class="fav-btn-modal" title="Favorite">
+                <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l8.72-8.72 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+            </button>
+            <button id="modalStarBtn" class="star-btn-modal" title="Star">
+                <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                <span id="starCountLabel" style="margin-left: 5px; font-size: 14px; display: none;"></span>
+            </button>
+            <button id="modalFlagBtn" class="flag-btn-modal" title="Flag">
+                <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7"></path></svg>
+            </button>
+            <button id="fullscreenBtn" title="Fullscreen">
+                <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // Demo mode configuration
+        window.isDemoMode = true;
+        window.demoImages = [
+            { name: "09704348-4996-47e6-b30e-0d35e3dff863.png", width: 1024, height: 1024, lastModified: 1710500000000 },
+            { name: "26629214-d486-4698-b2d6-6e2825c1dd2d.png", width: 1024, height: 1024, lastModified: 1710500000001 },
+            { name: "6fcc1bff-9586-4cfa-a043-f294655ef209.jpeg", width: 1024, height: 1024, lastModified: 1710500000002 },
+            { name: "b82172ad-408a-4eed-b155-0de644031646.png", width: 1024, height: 1024, lastModified: 1710500000003 },
+            { name: "dbcbf711-55fe-4be2-9105-5f7c32de67fd.jpeg", width: 1024, height: 1024, lastModified: 1710500000004 },
+            { name: "original (1).png", width: 1024, height: 1024, lastModified: 1710500000005 },
+            { name: "original (2).png", width: 1024, height: 1024, lastModified: 1710500000006 },
+            { name: "original (3).png", width: 1024, height: 1024, lastModified: 1710500000007 },
+            { name: "original.png", width: 1024, height: 1024, lastModified: 1710500000008 }
+        ];
+    </script>
+    <script src="static/js/app.js"></script>
+</body>
+</html>

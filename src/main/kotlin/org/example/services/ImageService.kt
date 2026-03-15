@@ -9,6 +9,8 @@ import java.sql.DriverManager
 import java.sql.Connection
 import java.util.concurrent.ConcurrentHashMap
 import javax.imageio.ImageIO
+import javax.imageio.ImageReader
+import javax.imageio.stream.FileImageInputStream
 
 class ImageService {
     private val allowedExtensions = listOf("jpg", "jpeg", "png", "gif", "webp")
@@ -33,15 +35,27 @@ class ImageService {
                         path TEXT PRIMARY KEY,
                         is_favorite INTEGER DEFAULT 0,
                         star_count INTEGER DEFAULT 0,
-                        is_flagged INTEGER DEFAULT 0
+                        is_flagged INTEGER DEFAULT 0,
+                        width INTEGER DEFAULT 0,
+                        height INTEGER DEFAULT 0,
+                        last_modified INTEGER DEFAULT 0
                     )
                 """.trimIndent())
                 
-                // Migration: Add is_flagged if it doesn't exist
-                try {
-                    stmt.execute("ALTER TABLE image_data ADD COLUMN is_flagged INTEGER DEFAULT 0")
-                } catch (e: Exception) {
-                    // Column might already exist, ignore
+                // Migrations
+                val migrations = listOf(
+                    "ALTER TABLE image_data ADD COLUMN is_flagged INTEGER DEFAULT 0",
+                    "ALTER TABLE image_data ADD COLUMN width INTEGER DEFAULT 0",
+                    "ALTER TABLE image_data ADD COLUMN height INTEGER DEFAULT 0",
+                    "ALTER TABLE image_data ADD COLUMN last_modified INTEGER DEFAULT 0"
+                )
+                
+                migrations.forEach { migration ->
+                    try {
+                        stmt.execute(migration)
+                    } catch (e: Exception) {
+                        // Column might already exist, ignore
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -109,9 +123,15 @@ class ImageService {
             // Try exact match first, then case-insensitive
             val data = metadataMap[normalizedPath] 
                 ?: metadataMap.entries.find { it.key.equals(normalizedPath, ignoreCase = true) }?.value
-                ?: DbImageData(false, 0, false)
+                ?: DbImageData(false, 0, false, 0, 0, 0)
                 
-            val (width, height) = getDimensions(file)
+            val (width, height) = if (data.width > 0 && data.height > 0 && data.lastModifiedDb == file.lastModified()) {
+                data.width to data.height
+            } else {
+                val dims = getDimensions(file)
+                updateDimensionsInDb(file, dims)
+                dims
+            }
             ImageMetadata(file.name, width, height, data.isFavorite, data.starCount, data.isFlagged, file.lastModified())
         }
 
@@ -148,12 +168,15 @@ class ImageService {
         val result = mutableMapOf<String, DbImageData>()
         try {
             getDbConnection()?.createStatement()?.use { stmt ->
-                val rs = stmt.executeQuery("SELECT path, is_favorite, star_count, is_flagged FROM image_data")
+                val rs = stmt.executeQuery("SELECT path, is_favorite, star_count, is_flagged, width, height, last_modified FROM image_data")
                 while (rs.next()) {
                     result[rs.getString("path")] = DbImageData(
                         rs.getInt("is_favorite") == 1,
                         rs.getInt("star_count"),
-                        rs.getInt("is_flagged") == 1
+                        rs.getInt("is_flagged") == 1,
+                        rs.getInt("width"),
+                        rs.getInt("height"),
+                        rs.getLong("last_modified")
                     )
                 }
             }
@@ -163,12 +186,51 @@ class ImageService {
         return result
     }
 
+    private fun updateDimensionsInDb(file: File, dims: Pair<Int, Int>) {
+        try {
+            getDbConnection()?.prepareStatement("""
+                INSERT INTO image_data (path, width, height, last_modified) 
+                VALUES (?, ?, ?, ?) 
+                ON CONFLICT(path) DO UPDATE SET 
+                    width = excluded.width,
+                    height = excluded.height,
+                    last_modified = excluded.last_modified
+            """.trimIndent())?.use { stmt ->
+                stmt.setString(1, file.absolutePath)
+                stmt.setInt(2, dims.first)
+                stmt.setInt(3, dims.second)
+                stmt.setLong(4, file.lastModified())
+                stmt.executeUpdate()
+            }
+        } catch (e: Exception) {
+            System.err.println("[ERROR] Failed to update dimensions in DB for ${file.name}: ${e.message}")
+        }
+    }
+
     private fun getDimensions(file: File): Pair<Int, Int> {
         return metadataCache.getOrPut(file.absolutePath) {
-            try {
-                val bimg = ImageIO.read(file)
-                if (bimg != null) bimg.width to bimg.height else 0 to 0
-            } catch (e: Exception) {
+            val extension = file.extension.lowercase()
+            val iter = ImageIO.getImageReadersBySuffix(extension)
+            if (iter.hasNext()) {
+                val reader = iter.next()
+                try {
+                    FileImageInputStream(file).use { input ->
+                        reader.input = input
+                        val width = reader.getWidth(reader.minIndex)
+                        val height = reader.getHeight(reader.minIndex)
+                        width to height
+                    }
+                } catch (e: Exception) {
+                    try {
+                        val bimg = ImageIO.read(file)
+                        if (bimg != null) bimg.width to bimg.height else 0 to 0
+                    } catch (e2: Exception) {
+                        0 to 0
+                    }
+                } finally {
+                    reader.dispose()
+                }
+            } else {
                 0 to 0
             }
         }
@@ -201,19 +263,29 @@ class ImageService {
         }
     }
 
-    private data class DbImageData(val isFavorite: Boolean, val starCount: Int, val isFlagged: Boolean)
+    private data class DbImageData(
+        val isFavorite: Boolean, 
+        val starCount: Int, 
+        val isFlagged: Boolean,
+        val width: Int = 0,
+        val height: Int = 0,
+        val lastModifiedDb: Long = 0
+    )
 
     private fun getImageData(path: String): DbImageData {
         val normalizedPath = File(path).absolutePath
         return try {
-            getDbConnection()?.prepareStatement("SELECT is_favorite, star_count, is_flagged FROM image_data WHERE LOWER(path) = LOWER(?)")?.use { stmt ->
+            getDbConnection()?.prepareStatement("SELECT is_favorite, star_count, is_flagged, width, height, last_modified FROM image_data WHERE LOWER(path) = LOWER(?)")?.use { stmt ->
                 stmt.setString(1, normalizedPath)
                 val rs = stmt.executeQuery()
                 if (rs.next()) {
                     DbImageData(
                         rs.getInt("is_favorite") == 1,
                         rs.getInt("star_count"),
-                        rs.getInt("is_flagged") == 1
+                        rs.getInt("is_flagged") == 1,
+                        rs.getInt("width"),
+                        rs.getInt("height"),
+                        rs.getLong("last_modified")
                     )
                 } else {
                     DbImageData(false, 0, false)
